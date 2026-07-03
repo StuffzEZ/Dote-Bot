@@ -1,0 +1,31 @@
+services:
+  dote-bot:
+    image: ghcr.io/stuffzez/dote-bot:latest
+    container_name: dote-bot
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_GUILD_IDS=${DISCORD_GUILD_IDS}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-meta-llama/llama-3.1-8b-instruct:free}
+      - SILENCE_FLUSH_MS=1200
+      - MIN_UTTERANCE_MS=400
+      - AUTO_LEAVE_EMPTY_MS=10000
+      - LOG_LEVEL=info
+    volumes:
+      - dote-data:/app/data
+    ports:
+      - "9000:9000"
+    networks:
+      - dote-net
+
+volumes:
+  dote-data:
+    driver: local
+
+networks:
+  dote-net:
+    driver: bridge

@@ -21,15 +21,14 @@ export const config = {
   // Leave unset to register globally (takes up to 1hr to propagate).
   discordGuildIds: optional('DISCORD_GUILD_IDS', '').split(',').filter(Boolean),
 
-  // Whisper transcription backend
-  // Expects an OpenAI-compatible /v1/audio/transcriptions endpoint, e.g.
-  // https://github.com/ahmetoner/whisper-asr-webservice or a faster-whisper server.
-  whisperUrl: optional('WHISPER_URL', 'http://whisper:9000'),
+  // Whisper transcription backend (embedded in same container)
+  whisperUrl: optional('WHISPER_URL', 'http://localhost:9000'),
   whisperModel: optional('WHISPER_MODEL', 'base'),
   whisperLanguage: optional('WHISPER_LANGUAGE', ''), // '' = auto-detect
 
-  // n8n webhook to POST finished transcript segments to
-  n8nWebhookUrl: optional('N8N_WEBHOOK_URL', ''),
+  // OpenRouter AI for conversation metadata generation
+  openrouterApiKey: optional('OPENROUTER_API_KEY', ''),
+  openrouterModel: optional('OPENROUTER_MODEL', 'meta-llama/llama-3.1-8b-instruct:free'),
 
   // Audio segmentation tuning
   // How long a user must be silent before we consider their utterance "done"
@@ -37,9 +36,6 @@ export const config = {
   silenceFlushMs: parseInt(optional('SILENCE_FLUSH_MS', '1200'), 10),
   // Minimum utterance length worth transcribing (ms) - filters out mic pops / coughs.
   minUtteranceMs: parseInt(optional('MIN_UTTERANCE_MS', '400'), 10),
-  // How often (ms) to batch-send accumulated segments to n8n while a call is ongoing.
-  // Set to 0 to only send once at the end of the call (on /leave or empty channel).
-  batchIntervalMs: parseInt(optional('BATCH_INTERVAL_MS', '30000'), 10),
 
   // Auto-leave when the bot is the only one left in the voice channel (ms of grace period)
   autoLeaveEmptyMs: parseInt(optional('AUTO_LEAVE_EMPTY_MS', '10000'), 10),

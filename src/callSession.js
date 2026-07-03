@@ -7,18 +7,14 @@ import { config } from './config.js';
 import { log } from './logger.js';
 import { SpeakerCaptureManager } from './speakerCapture.js';
 import { transcribePcm } from './transcribe.js';
-import { N8nForwarder } from './n8nForwarder.js';
+import { ConversationManager } from './conversationManager.js';
 
 // One CallSession per active voice channel the bot is in.
 export class CallSession {
   constructor(voiceChannel, client) {
     this.voiceChannel = voiceChannel;
     this.client = client;
-    this.callId = `${voiceChannel.guildId}-${voiceChannel.id}-${Date.now()}`;
-    this.forwarder = new N8nForwarder(this.callId, {
-      guildId: voiceChannel.guildId,
-      channelId: voiceChannel.id,
-    });
+    this.conversation = null;
     this.emptyCheckTimer = null;
     this.usernameCache = new Map();
   }
@@ -34,6 +30,11 @@ export class CallSession {
 
     await entersState(this.connection, VoiceConnectionStatus.Ready, 15_000);
     log.info(`Joined voice channel ${this.voiceChannel.name} (${this.voiceChannel.id})`);
+
+    this.conversation = ConversationManager.startConversation({
+      guildId: this.voiceChannel.guildId,
+      voiceChannelId: this.voiceChannel.id,
+    });
 
     const receiver = this.connection.receiver;
 
@@ -77,13 +78,16 @@ export class CallSession {
         return;
       }
       log.info(`[${username}] ${text}`);
-      this.forwarder.addSegment({
-        userId,
-        username,
-        startTime: new Date(startedAt).toISOString(),
-        endTime: new Date(endedAt).toISOString(),
-        text,
-      });
+
+      if (this.conversation) {
+        ConversationManager.addSegmentToConversation(this.conversation.id, {
+          userId,
+          username,
+          startTime: new Date(startedAt).toISOString(),
+          endTime: new Date(endedAt).toISOString(),
+          text,
+        });
+      }
     } catch (err) {
       log.error(`Transcription failed for ${username}:`, err.message);
     }
@@ -101,7 +105,7 @@ export class CallSession {
   }
 
   async stop(reason = 'manual') {
-    log.info(`Ending call session ${this.callId} (reason: ${reason})`);
+    log.info(`Ending call session (reason: ${reason})`);
     if (this.emptyCheckTimer) clearInterval(this.emptyCheckTimer);
     if (this.captureManager) this.captureManager.destroy();
     if (this.connection) {
@@ -111,7 +115,11 @@ export class CallSession {
         // already destroyed
       }
     }
-    await this.forwarder.stop();
+
+    if (this.conversation) {
+      await ConversationManager.endConversationAndProcess(this.conversation.id);
+    }
+
     this.onEnded?.(this);
   }
 }

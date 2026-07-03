@@ -4,21 +4,29 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  ChannelType,
+  PermissionFlagsBits,
 } from 'discord.js';
 import { config } from './config.js';
 import { log } from './logger.js';
 import { CallSession } from './callSession.js';
+import { ConversationManager } from './conversationManager.js';
+import { initDatabase, closeDatabase } from './database.js';
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent,
   ],
 });
 
 // guildId -> CallSession
 const activeSessions = new Map();
+
+// guildId -> textChannelId (for dote channels)
+const doteChannels = new Map();
 
 const commands = [
   new SlashCommandBuilder()
@@ -27,6 +35,30 @@ const commands = [
   new SlashCommandBuilder()
     .setName('leave')
     .setDescription('Leave the voice channel and stop transcribing'),
+  new SlashCommandBuilder()
+    .setName('dote-channel')
+    .setDescription('Create a text channel to chat with Dote about conversations')
+    .addStringOption(option =>
+      option
+        .setName('name')
+        .setDescription('Name for the Dote channel')
+        .setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName('dote-search')
+    .setDescription('Search through past conversations')
+    .addStringOption(option =>
+      option
+        .setName('query')
+        .setDescription('Search query')
+        .setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName('dote-recent')
+    .setDescription('Show recent conversations'),
+  new SlashCommandBuilder()
+    .setName('dote-important')
+    .setDescription('Show most important conversations'),
 ].map((c) => c.toJSON());
 
 async function registerCommands() {
@@ -50,16 +82,46 @@ async function registerCommands() {
 
 client.once('ready', async () => {
   log.info(`Logged in as ${client.user.tag}`);
+  initDatabase();
   await registerCommands();
 });
 
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === 'join') {
-    await handleJoin(interaction);
-  } else if (interaction.commandName === 'leave') {
-    await handleLeave(interaction);
+  switch (interaction.commandName) {
+    case 'join':
+      await handleJoin(interaction);
+      break;
+    case 'leave':
+      await handleLeave(interaction);
+      break;
+    case 'dote-channel':
+      await handleDoteChannel(interaction);
+      break;
+    case 'dote-search':
+      await handleDoteSearch(interaction);
+      break;
+    case 'dote-recent':
+      await handleDoteRecent(interaction);
+      break;
+    case 'dote-important':
+      await handleDoteImportant(interaction);
+      break;
+  }
+});
+
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+
+  const doteChannelId = doteChannels.get(message.guildId);
+  if (doteChannelId && message.channelId === doteChannelId) {
+    try {
+      await ConversationManager.handleTextChannelMessage(message);
+    } catch (err) {
+      log.error('Error handling Dote channel message:', err);
+      await message.reply('Sorry, I encountered an error processing your message.');
+    }
   }
 });
 
@@ -114,12 +176,114 @@ async function handleLeave(interaction) {
   await interaction.deferReply();
   await session.stop('manual_leave');
   activeSessions.delete(interaction.guildId);
-  await interaction.editReply('Left the voice channel. Transcript sent to n8n.');
+  await interaction.editReply('Left the voice channel. Conversation saved and processed.');
+}
+
+async function handleDoteChannel(interaction) {
+  const member = interaction.member;
+  const channelName = interaction.options.getString('name').toLowerCase().replace(/\s+/g, '-');
+
+  if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    await interaction.reply({
+      content: "You need the Manage Channels permission to create a Dote channel.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await interaction.deferReply();
+
+  try {
+    const channel = await interaction.guild.channels.create({
+      name: `dote-${channelName}`,
+      type: ChannelType.GuildText,
+      topic: `Chat with Dote about your conversations. Created by ${member.displayName}`,
+    });
+
+    doteChannels.set(interaction.guildId, channel.id);
+
+    await interaction.editReply(
+      `Created ${channel}! Use this channel to chat with Dote about your conversations.\n` +
+      `I can help you search, summarize, and find information from past voice calls.`
+    );
+
+    log.info(`Created Dote channel ${channel.name} in guild ${interaction.guild.name}`);
+  } catch (err) {
+    log.error('Failed to create Dote channel:', err);
+    await interaction.editReply(`Failed to create channel: ${err.message}`);
+  }
+}
+
+async function handleDoteSearch(interaction) {
+  const query = interaction.options.getString('query');
+  await interaction.deferReply();
+
+  const conversations = ConversationManager.searchConversationsForGuild(interaction.guildId, query);
+
+  if (conversations.length === 0) {
+    await interaction.editReply(`No conversations found matching "${query}".`);
+    return;
+  }
+
+  const results = conversations.map((conv, i) =>
+    `**${i + 1}. ${conv.title || 'Untitled'}** (${conv.importance}/10)\n` +
+    `Description: ${conv.description || 'No description'}\n` +
+    `Date: ${new Date(conv.started_at).toLocaleDateString()}`
+  ).join('\n\n');
+
+  await interaction.editReply(`Found ${conversations.length} conversation(s):\n\n${results}`);
+}
+
+async function handleDoteRecent(interaction) {
+  await interaction.deferReply();
+
+  const conversations = ConversationManager.getRecentConversationsForGuild(interaction.guildId);
+
+  if (conversations.length === 0) {
+    await interaction.editReply('No conversations found yet.');
+    return;
+  }
+
+  const results = conversations.map((conv, i) =>
+    `**${i + 1}. ${conv.title || 'Untitled'}** (${conv.importance}/10)\n` +
+    `Description: ${conv.description || 'No description'}\n` +
+    `Date: ${new Date(conv.started_at).toLocaleDateString()}`
+  ).join('\n\n');
+
+  await interaction.editReply(`Recent conversations:\n\n${results}`);
+}
+
+async function handleDoteImportant(interaction) {
+  await interaction.deferReply();
+
+  const conversations = ConversationManager.getImportantConversationsForGuild(interaction.guildId);
+
+  if (conversations.length === 0) {
+    await interaction.editReply('No important conversations found yet.');
+    return;
+  }
+
+  const results = conversations.map((conv, i) =>
+    `**${i + 1}. ${conv.title || 'Untitled'}** (${conv.importance}/10)\n` +
+    `Description: ${conv.description || 'No description'}\n` +
+    `Date: ${new Date(conv.started_at).toLocaleDateString()}`
+  ).join('\n\n');
+
+  await interaction.editReply(`Most important conversations:\n\n${results}`);
 }
 
 process.on('SIGTERM', async () => {
-  log.info('SIGTERM received, cleaning up active sessions...');
+  log.info('SIGTERM received, cleaning up...');
   await Promise.all([...activeSessions.values()].map((s) => s.stop('shutdown')));
+  closeDatabase();
+  client.destroy();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  log.info('SIGINT received, cleaning up...');
+  await Promise.all([...activeSessions.values()].map((s) => s.stop('shutdown')));
+  closeDatabase();
   client.destroy();
   process.exit(0);
 });

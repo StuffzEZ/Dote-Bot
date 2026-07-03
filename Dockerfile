@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS build
+FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ RUN npm install --omit=dev
 COPY src ./src
 
 # ---- Runtime stage: slimmer image without build toolchain ----
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 

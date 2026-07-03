@@ -1,0 +1,37 @@
+services:
+  meeting-bot:
+    build: .
+    container_name: discord-meeting-bot
+    restart: unless-stopped
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      DISCORD_GUILD_IDS: ${DISCORD_GUILD_IDS:-}
+      WHISPER_URL: http://whisper:9000
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      WHISPER_LANGUAGE: ${WHISPER_LANGUAGE:-}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      SILENCE_FLUSH_MS: ${SILENCE_FLUSH_MS:-1200}
+      MIN_UTTERANCE_MS: ${MIN_UTTERANCE_MS:-400}
+      BATCH_INTERVAL_MS: ${BATCH_INTERVAL_MS:-30000}
+      AUTO_LEAVE_EMPTY_MS: ${AUTO_LEAVE_EMPTY_MS:-10000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      - whisper
+
+  # Self-hosted Whisper ASR server exposing an OpenAI-ish /asr endpoint.
+  # Swap the image/tag for a GPU build if you have a CUDA-capable box.
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    container_name: whisper-asr
+    restart: unless-stopped
+    environment:
+      ASR_MODEL: ${WHISPER_MODEL:-base}
+      ASR_ENGINE: faster_whisper
+    ports:
+      - "9000:9000" # optional, only needed if you want to hit it directly for debugging
+    volumes:
+      - whisper-cache:/root/.cache
+
+volumes:
+  whisper-cache:

@@ -11,7 +11,7 @@ import { config } from './config.js';
 import { log } from './logger.js';
 import { CallSession } from './callSession.js';
 import { ConversationManager } from './conversationManager.js';
-import { initDatabase, closeDatabase } from './database.js';
+import { initDatabase, closeDatabase, addDoteChannel, isDoteChannel } from './database.js';
 
 const client = new Client({
   intents: [
@@ -24,9 +24,6 @@ const client = new Client({
 
 // guildId -> CallSession
 const activeSessions = new Map();
-
-// guildId -> textChannelId (for dote channels)
-const doteChannels = new Map();
 
 const commands = [
   new SlashCommandBuilder()
@@ -120,8 +117,10 @@ client.on('interactionCreate', async (interaction) => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
-  const doteChannelId = doteChannels.get(message.guildId);
-  if (doteChannelId && message.channelId === doteChannelId) {
+  log.debug(`Message in channel ${message.channelId}: ${message.content}`);
+
+  if (isDoteChannel(message.channelId)) {
+    log.debug(`Dote channel detected, processing message`);
     try {
       await ConversationManager.handleTextChannelMessage(message);
     } catch (err) {
@@ -206,7 +205,7 @@ async function handleDoteChannel(interaction) {
       topic: `Chat with Dote about your conversations. Created by ${member.displayName}`,
     });
 
-    doteChannels.set(interaction.guildId, channel.id);
+    addDoteChannel(interaction.guildId, channel.id);
 
     await interaction.editReply(
       `Created ${channel}! Use this channel to chat with Dote about your conversations.\n` +

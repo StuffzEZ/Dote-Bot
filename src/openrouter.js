@@ -71,6 +71,8 @@ export async function chatWithMemory(messages, context) {
     throw new Error('OPENROUTER_API_KEY not set');
   }
 
+  log.debug(`Calling OpenRouter with ${messages.length} messages`);
+
   const systemMessage = {
     role: 'system',
     content: `You are Dote, a helpful AI assistant in a Discord server. You help users recall and analyze past voice conversations.

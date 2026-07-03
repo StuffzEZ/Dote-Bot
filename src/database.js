@@ -55,6 +55,13 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_tags_conversation ON tags(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_guild ON conversations(guild_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_text_channel ON conversations(text_channel_id);
+
+    CREATE TABLE IF NOT EXISTS dote_channels (
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (guild_id, channel_id)
+    );
   `);
 
   log.info('Database initialized');
@@ -164,6 +171,31 @@ export function getRecentConversations(guildId, limit = 5) {
     ORDER BY started_at DESC
     LIMIT ?
   `).all(guildId, limit);
+}
+
+export function addDoteChannel(guildId, channelId) {
+  const stmt = getDb().prepare(`
+    INSERT OR IGNORE INTO dote_channels (guild_id, channel_id) VALUES (?, ?)
+  `);
+  stmt.run(guildId, channelId);
+}
+
+export function getDoteChannels(guildId) {
+  return getDb().prepare(`
+    SELECT channel_id FROM dote_channels WHERE guild_id = ?
+  `).all(guildId).map(r => r.channel_id);
+}
+
+export function isDoteChannel(channelId) {
+  return getDb().prepare(`
+    SELECT 1 FROM dote_channels WHERE channel_id = ?
+  `).get(channelId) !== undefined;
+}
+
+export function removeDoteChannel(channelId) {
+  getDb().prepare(`
+    DELETE FROM dote_channels WHERE channel_id = ?
+  `).run(channelId);
 }
 
 export function closeDatabase() {

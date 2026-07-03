@@ -106,12 +106,15 @@ export class ConversationManager {
 
     if (author.bot) return;
 
+    log.info(`Processing message from ${author.username} in dote channel ${channel.id}`);
+
     const conversations = getConversationsByTextChannel(channel.id);
-    if (conversations.length === 0) return;
+    log.debug(`Found ${conversations.length} conversations for this channel`);
 
     const conversationContext = this.formatConversationsForContext(conversations);
 
     const historyMessages = await this.getChannelHistory(message.channel, 15);
+    log.debug(`Got ${historyMessages.length} history messages`);
 
     const messages = [
       ...historyMessages,

@@ -18,6 +18,12 @@ import { generateConversationMetadata, chatWithMemory } from './openrouter.js';
 
 export class ConversationManager {
   static activeConversations = new Map();
+  static resetChannels = new Set();
+
+  static resetChannelContext(channelId) {
+    this.resetChannels.add(channelId);
+    log.info(`Reset context for channel ${channelId}`);
+  }
 
   static startConversation({ guildId, voiceChannelId, textChannelId }) {
     const id = `${guildId}-${voiceChannelId || 'text'}-${Date.now()}`;
@@ -96,25 +102,63 @@ export class ConversationManager {
   }
 
   static async handleTextChannelMessage(message) {
-    const { guildId, channel.id: channelId, content, author } = message;
+    const { guildId, channel, content, author } = message;
 
     if (author.bot) return;
 
-    const conversations = getConversationsByTextChannel(channelId);
+    const conversations = getConversationsByTextChannel(channel.id);
     if (conversations.length === 0) return;
 
-    const context = this.formatConversationsForContext(conversations);
+    const conversationContext = this.formatConversationsForContext(conversations);
 
-    const response = await chatWithMemory(
-      [{ role: 'user', content }],
-      context
-    );
+    const historyMessages = await this.getChannelHistory(message.channel, 15);
+
+    const messages = [
+      ...historyMessages,
+      { role: 'user', content: `${author.username}: ${content}` }
+    ];
+
+    const response = await chatWithMemory(messages, conversationContext);
 
     await message.reply(response);
   }
 
+  static async getChannelHistory(channel, limit) {
+    try {
+      if (this.resetChannels.has(channel.id)) {
+        this.resetChannels.delete(channel.id);
+        return [];
+      }
+
+      const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      const fetched = await channel.messages.fetch({ limit: limit + 20 });
+      const sorted = Array.from(fetched.values()).reverse();
+
+      const recentMessages = sorted.filter(msg => msg.createdTimestamp > oneDayAgo);
+
+      return recentMessages.slice(-limit).map(msg => ({
+        role: msg.author.bot ? 'assistant' : 'user',
+        content: msg.author.bot ? msg.content : `${msg.author.username}: ${msg.content}`
+      }));
+    } catch (err) {
+      log.error('Failed to fetch channel history:', err.message);
+      return [];
+    }
+  }
+
   static formatConversationsForContext(conversations) {
-    return conversations.map(conv => {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const recentConversations = conversations.filter(conv => {
+      const convDate = new Date(conv.started_at);
+      return convDate > oneDayAgo;
+    });
+
+    if (recentConversations.length === 0) {
+      return 'No recent conversations (within the last 24 hours).';
+    }
+
+    return recentConversations.map(conv => {
       const segments = getConversationSegments(conv.id);
       const tags = getConversationTags(conv.id);
       const transcript = segments.map(s => `${s.username}: ${s.text}`).join('\n');

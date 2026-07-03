@@ -73,16 +73,18 @@ export async function chatWithMemory(messages, context) {
 
   const systemMessage = {
     role: 'system',
-    content: `You are Dote, a helpful AI assistant that helps users recall and analyze past conversations.
-You have access to the following conversation data:
+    content: `You are Dote, a helpful AI assistant in a Discord server. You help users recall and analyze past voice conversations.
 
+STORED CONVERSATIONS:
 ${context}
 
-When answering questions:
-- Reference specific conversations by title
+INSTRUCTIONS:
+- Answer questions based on the stored conversations above
+- Reference specific conversations by title when relevant
 - Quote relevant segments when helpful
-- If you don't have enough information, say so
-- Be concise and helpful`
+- If you don't have enough information from the conversations, say so
+- Be concise and helpful
+- You can see the chat history below - continue the conversation naturally`
   };
 
   const apiMessages = [systemMessage, ...messages];

@@ -59,6 +59,9 @@ const commands = [
   new SlashCommandBuilder()
     .setName('dote-important')
     .setDescription('Show most important conversations'),
+  new SlashCommandBuilder()
+    .setName('dote-reset')
+    .setDescription('Reset the AI context memory for this channel'),
 ].map((c) => c.toJSON());
 
 async function registerCommands() {
@@ -107,6 +110,9 @@ client.on('interactionCreate', async (interaction) => {
       break;
     case 'dote-important':
       await handleDoteImportant(interaction);
+      break;
+    case 'dote-reset':
+      await handleDoteReset(interaction);
       break;
   }
 });
@@ -270,6 +276,14 @@ async function handleDoteImportant(interaction) {
   ).join('\n\n');
 
   await interaction.editReply(`Most important conversations:\n\n${results}`);
+}
+
+async function handleDoteReset(interaction) {
+  await interaction.deferReply();
+
+  ConversationManager.resetChannelContext(interaction.channelId);
+
+  await interaction.editReply('Context memory reset. I\'ll start fresh with the next message.');
 }
 
 process.on('SIGTERM', async () => {
